@@ -40,9 +40,9 @@
   <checkProperty>0</checkProperty>
   <genStackFrame>0</genStackFrame>
   <pic>0</pic>
-  <cov>0</cov>
+  <cov>1</cov>
   <nofloat>0</nofloat>
-  <Dversion>2.043</Dversion>
+  <Dversion>2</Dversion>
   <ignoreUnsupportedPragmas>0</ignoreUnsupportedPragmas>
   <compiler>0</compiler>
   <otherDMD>0</otherDMD>
@@ -89,7 +89,7 @@
   <resfile />
   <exefile>$(OutDir)\$(ProjectName).exe</exefile>
   <useStdLibPath>1</useStdLibPath>
-  <additionalOptions>-L+..\ExternalDeps\dwt\lib -J..\ExternalDeps\dwt\org.eclipse.swt.win32.win32.x86\res</additionalOptions>
+  <additionalOptions>-L+..\ExternalDeps\dwt\lib\ -J..\ExternalDeps\dwt\org.eclipse.swt.win32.win32.x86\res</additionalOptions>
   <preBuildCommand />
   <postBuildCommand />
   <filesToClean>*.obj;*.cmd;*.build;*.json;*.dep</filesToClean>
@@ -189,6 +189,13 @@
   <filesToClean>*.obj;*.cmd;*.build;*.json;*.dep</filesToClean>
  </Config>
  <Folder name="BuildSlave">
+  <Folder name="UI">
+   <File path="ui\Base.d" />
+   <File path="ui\Build.d" />
+   <File path="ui\DataPrepare.d" />
+   <File path="ui\UI.d" />
+  </Folder>
+  <File path="config.d" />
   <File path="winmain.d" />
  </Folder>
 </DProject>

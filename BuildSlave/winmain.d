@@ -2,8 +2,12 @@ module winmain;
 
 import core.runtime;
 import core.sys.windows.windows;
-import org.eclipse.swt.widgets.Display;
-import org.eclipse.swt.widgets.Shell;
+import std.file;
+import std.path;
+import std.conv;
+import std.exception;
+import BuildSlave.Config;
+import BuildSlave.UI.UI;
 
 
 extern (Windows)
@@ -20,7 +24,16 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
     {
         Runtime.initialize();
 
-        result = myWinMain(hInstance, hPrevInstance, lpCmdLine, nCmdShow);
+        scope Config cfg = new Config(to!string(lpCmdLine));
+
+        string workingDir = absolutePath(Config.GetVariableOrDefaultValue("WorkingDir", "."));
+        enforce(exists(workingDir), "Working Directory is non-existant");
+        chdir(workingDir);
+
+        bool showUI = !(Config.Contains("build") || Config.Contains("sync") || Config.Contains("preprocess"));
+
+        if(showUI)
+            result = UIShell.Show();
 
         Runtime.terminate();
     }
@@ -33,17 +46,32 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
     return result;
 }
 
-int myWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
-{
-    auto display = new Display;
-    auto shell = new Shell;
-    shell.open();
 
-    while (!shell.isDisposed)
-        if (!display.readAndDispatch())
-            display.sleep();
-
-    display.dispose();
-
-    return 0;
-}
+//int main()
+//{
+//    int result = 0;
+//    
+//    try
+//    {
+//        dwt.widgets.Display.Display display = new dwt.widgets.Display.Display();
+//        
+//        //@  Other application initialization code here.
+//        
+//        UIShell eshell = new UIShell(display);
+//        eshell.shell.open();
+//        while(!eshell.shell.isDisposed())
+//        {
+//            if(!display.readAndDispatch())
+//                display.sleep();
+//        }
+//        display.dispose();
+//    }
+//    catch(Object o)
+//    {
+//        dwt.widgets.MessageBox.MessageBox.showError(o.toString(), "Fatal Error");
+//        
+//        result = 1;
+//    }
+//    
+//    return result;
+//}
