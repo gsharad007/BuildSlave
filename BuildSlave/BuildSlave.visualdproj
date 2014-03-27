@@ -193,6 +193,7 @@
    <File path="ui\Base.d" />
    <File path="ui\Build.d" />
    <File path="ui\DataPrepare.d" />
+   <File path="UI\Status.d" />
    <File path="ui\UI.d" />
   </Folder>
   <File path="config.d" />

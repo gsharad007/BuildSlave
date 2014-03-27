@@ -25,12 +25,14 @@ import org.eclipse.swt.events.SelectionListener;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import BuildSlave.UI.Base;
+import BuildSlave.UI.Status;
 import BuildSlave.Config;
 
 
 class UIBuild : UIBase
 {
     bool initialized = false;
+
     // Do not modify or move this block of variables.
     //~Entice Designer variables begin here.
     org.eclipse.swt.widgets.Button.Button[] chkBuilds;
@@ -52,11 +54,6 @@ class UIBuild : UIBase
     this(Composite parent)
     {
         super(parent);
-
-        //initializeUIBuild(display);
-        
-        //@  Other UIBuild initialization code here.
-        
     }
 
     override public void preInitialize()

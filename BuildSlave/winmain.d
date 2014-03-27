@@ -20,7 +20,7 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
         throw e;
     }
 
-    try
+    //try
     {
         Runtime.initialize();
 
@@ -37,11 +37,11 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
         Runtime.terminate();
     }
-    catch (Throwable o)		// catch any uncaught exceptions
-    {
-        MessageBoxA(null, cast(char *)o.toString(), "Error", MB_OK | MB_ICONEXCLAMATION);
-        result = 0;		// failed
-    }
+    //catch (Throwable o)		// catch any uncaught exceptions
+    //{
+    //    MessageBoxA(null, cast(char *)o.toString(), "Error", MB_OK | MB_ICONEXCLAMATION);
+    //    result = 0;		// failed
+    //}
 
     return result;
 }

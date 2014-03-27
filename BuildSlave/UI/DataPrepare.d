@@ -11,47 +11,222 @@ import std.algorithm;
 import std.array;
 import std.string;
 import std.conv;
+import std.math;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.graphics.Color;
+import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Text;
 import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Group;
 import org.eclipse.swt.widgets.List;
 import org.eclipse.swt.widgets.Combo;
-import org.eclipse.swt.graphics.Color;
-import org.eclipse.swt.graphics.Rectangle;
-import org.eclipse.swt.widgets.MessageBox;
+//import org.eclipse.swt.widgets.MessageBox;
 //import org.eclipse.swt.widgets.Listener;
 //import org.eclipse.swt.widgets.Event;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
+import org.eclipse.swt.events.ModifyListener;
+import org.eclipse.swt.events.ModifyEvent;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.layout.RowLayout;
 import org.eclipse.swt.layout.FillLayout;
 import org.eclipse.swt.custom.SashForm;
 import BuildSlave.UI.Base;
+import BuildSlave.UI.Status;
 import BuildSlave.Config;
-
 
 class UIDataPrepare : UIBase
 {
+    static final string typeName = "Data Prepare";
     bool initialized = false;
+
+    enum Component
+    {
+        Worlds,
+        Levels,
+        Platforms,
+        Languages,
+        Max
+    }
+
+    private class FilteredList
+    {
+        Label label;
+        Text  filter;
+        List  list;
+        string lastFilterText;
+        string[string] abbreviations;
+        string seperator;
+        FilterModifyListener filterModifyListener;
+
+        this()
+        {
+        }
+
+        void createUI(Composite canvas, string typeName, int heightHint, int widthHint)
+        {
+            Composite container = new Composite(canvas, SWT.NONE);
+            GridLayout layout = new GridLayout();
+            layout.marginWidth = 0;
+            layout.marginHeight = 0;
+            layout.horizontalSpacing = 0;
+            layout.verticalSpacing = 0;
+            //layout.fill = true;
+            //layout.wrap = false;
+            container.setLayout(layout);
+
+            seperator = Config.GetVariableOrDefaultValue("Preprocessor" ~ typeName ~ "MultiSeperator", null);
+            int multiStyle = seperator !is null ? SWT.MULTI : SWT.SINGLE;
+
+            //~SWT Label=label
+            label = new Label(container,SWT.LEFT);
+            label.setText(typeName ~ "s:");
+            label.setBackground(display.getSystemColor(SWT.COLOR_WIDGET_BACKGROUND));
+            //label.setBounds(12, 12, 160, 16);
+
+            //~SWT Text=filter
+            filter = new Text(container,SWT.SEARCH);
+            GridData gridDataFilter = new GridData(GridData.FILL_HORIZONTAL);
+            filter.setLayoutData(gridDataFilter);
+
+            //~SWT List=list
+            list = new List(container,multiStyle|SWT.BORDER|SWT.V_SCROLL|SWT.H_SCROLL);
+            //list.setLayoutData(gridData3Row);
+            GridData gridDataList = new GridData(GridData.FILL_BOTH);
+            gridDataList.heightHint = heightHint;
+            gridDataList.widthHint  = widthHint;
+            list.setLayoutData(gridDataList);
+            //list.setLayoutData(new GridData(GridData.FILL_BOTH));
+            //list.addSelectionListener(new WorldSelectedListener());
+            list.addSelectionListener(new UpdateCMDLineListener());
+            //list.setBounds(col1Pos.x, col1Pos.y, col1SubSize.x, col1SubSize.y);
+
+            filterModifyListener = new FilterModifyListener();
+            filter.addModifyListener(filterModifyListener);
+        }
+
+        void setText(string text, bool enableEvents = false)
+        {
+            string oldText = filter.getText();
+            if(text == oldText) return;
+            //if(text.length < oldText.length) return;
+
+            filterModifyListener.enabled = enableEvents;
+            filter.setText(text);
+            filter.setSelection(oldText.length, text.length);
+            filterModifyListener.enabled = true;
+        }
+
+        string cleanName(string a)
+        {
+            return toLower(translate(a, ['_' : ' ']));
+        }
+
+        void doneUpdating()
+        {
+            lastFilterText = "";
+            auto items = list.getItems();
+            foreach(ref item; items)
+                item = cleanName(item);
+            abbreviations = std.string.abbrev(items);
+        }
+
+        private class FilterModifyListener : ModifyListener
+        {
+            bool enabled = true;
+            public int distance(string a, string[] ass, string[] selected, string b)
+            {
+                int ranking = 0;
+
+                int i = countUntil(selected, b);
+                if(i != -1)
+                {
+                    ranking += (selected.length - i) * 1000;
+                    return (ranking);
+                }
+
+                foreach(str; ass)
+                {
+                    ranking += indexOf(b, str, std.string.CaseSensitive.no) != -1 ? str.length * 10 : 0;
+                }
+                foreach(str; ass)
+                {
+                    if(startsWith(b, str) != 0)
+                    {
+                        ranking += str.length * 20;
+                        break;
+                    }
+                }
+
+                int ld = levenshteinDistance(a, b);
+                //int sizeDiff = (b.length - a.length);
+                ranking += max(0,  10 - ld / 2);
+
+                return (ranking);
+            }
+            override public void modifyText(ModifyEvent e)
+            {
+                if(!enabled) return;
+
+                if(abbreviations.length == 0)
+                    doneUpdating();
+
+                string filterString = filter.getText();
+                if(filterString.length == 0 || lastFilterText == filterString) return;
+
+
+                {
+                    string[] filterStrings = seperator !is null ? split(filterString, seperator) : split(filterString, " ");
+                    auto selection = list.getSelection();
+                    auto items = list.getItems();
+                    schwartzSort!(i => distance(filterString, filterStrings, selection, i), "a > b")(items);
+                    list.setItems(items);
+                    list.setSelection(selection);
+                }
+
+                string lastFilter = lastFilterText;
+                int ret = startsWith(lastFilterText, filterString);
+                if(startsWith(lastFilterText, filterString) == 0)
+                {
+                    string cleanfilterString = cleanName(filterString);
+                    string[] cleanfilters = seperator !is null ? split(cleanfilterString, seperator) : [cleanfilterString];
+                    foreach(cleanfilter; cleanfilters)
+                    {
+                        auto result = cleanfilter in abbreviations;
+                        if(result !is null)
+                        {
+                            foreach(i, item; list.getItems())
+                            {
+                                if(cleanName(item) == *result)
+                                {
+                                    list.select(i);
+                                    list.postEvent(SWT.Selection);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                lastFilterText = filterString;
+            }
+        }
+    }
+
     // Do not modify or move this block of variables.
     //~Entice Designer variables begin here.
     org.eclipse.swt.widgets.Group.Group grpAdvanced;
     org.eclipse.swt.widgets.Button.Button[] chkBuildOptions;
-    org.eclipse.swt.widgets.Label.Label lblWorlds;
-    org.eclipse.swt.widgets.Label.Label lblLevels;
-    org.eclipse.swt.widgets.Label.Label lblPlatforms;
-    org.eclipse.swt.widgets.Combo.Combo cmbWorlds;
-    org.eclipse.swt.widgets.Combo.Combo cmbLevels;
-    org.eclipse.swt.widgets.Combo.Combo cmbPlatforms;
+    FilteredList[Component.Max] filteredList;
     org.eclipse.swt.widgets.Text.Text txtCmdLine;
     org.eclipse.swt.widgets.TabFolder.TabFolder tabStatuses;
-    org.eclipse.swt.widgets.Text.Text txtStatus;
+    //org.eclipse.swt.widgets.Text.Text txtStatus;
     org.eclipse.swt.widgets.Button.Button btnBuild;
-    org.eclipse.swt.widgets.ProgressBar.ProgressBar progressBar;
+    //org.eclipse.swt.widgets.ProgressBar.ProgressBar progressBar;
     //~Entice Designer variables end here.
 
     string[] worlds;
@@ -60,11 +235,6 @@ class UIDataPrepare : UIBase
     this(Composite parent)
     {
         super(parent);
-
-        //initializeMyShell(display);
-
-        //@  Other MyShell initialization code here.
-
     }
 
     override public void preInitialize()
@@ -81,42 +251,30 @@ class UIDataPrepare : UIBase
     override public void postInitialize()
     {
         PopulateWorlds();
-        PopulateLevels(cmbWorlds.getText());
+        PopulateLevels(filteredList[Component.Worlds].list.getSelection());
         PopulatePlatforms();
+        PopulateLanguages();
         UpdateCMDLine();
     }
 
     override public bool checkDependencies()
     {
+        bool ret = true;
         string preprocessor = absolutePath(Config.GetVariableOrDefaultValue("PreprocessorExe", ""));
         if(!exists(preprocessor))
         {
-            auto errorMsg = "ERROR: Can not find Preprocessor '" ~ preprocessor ~ "'\n";
-            if(txtStatus !is null)
-            {
-                txtStatus.append(errorMsg);
-            }
-            else
-            {
-                assert(exists(preprocessor), errorMsg);
-                return false;
-            }
+            auto errorMsg = "ERROR: Can not find Preprocessor '" ~ preprocessor;
+            UIStatus.get().appendLine(UIBase.ErrorLog, errorMsg);
+            ret = false;
         }
         string worldsDir = absolutePath(Config.GetVariableOrDefaultValue("WorldsDir", ""));
         if(!exists(worldsDir))
         {
-            auto errorMsg = "ERROR: Can not find World Directory '" ~ worldsDir ~ "'\n";
-            if(txtStatus !is null)
-            {
-                txtStatus.append(errorMsg);
-            }
-            else
-            {
-                assert(exists(worldsDir), errorMsg);
-                return false;
-            }
+            auto errorMsg = "ERROR: Can not find World Directory '" ~ worldsDir;
+            UIStatus.get().appendLine(UIBase.ErrorLog, errorMsg);
+            ret = false;
         }
-        return true;
+        return ret;
     }
 
     private void createUI(Composite canvas)
@@ -130,106 +288,42 @@ class UIDataPrepare : UIBase
 
         GridLayout gl = new GridLayout();
         canvas.setLayout(gl);
-        //gl.marginWidth = 0;
-        //gl.marginHeight = 0;
-        //gl.numColumns=2;
-        //gl.makeColumnsEqualWidth = true;
-
-        //GridData gridDataCommon = new GridData(GridData.HORIZONTAL_ALIGN_FILL);
-        ////gridDataCommon.grabExcessHorizontalSpace = true;
-        ////gridDataCommon.grabExcessVerticalSpace   = false;
-        ////gridDataCommon.horizontalAlignment = GridData.FILL;
-        ////gridDataCommon.verticalAlignment   = GridData.FILL;
-        ////gridDataCommon.horizontalSpan = 1;
-        ////gridDataCommon.verticalSpan   = 1;
-        //
-        //GridData gridDataPlatforms = new GridData(GridData.HORIZONTAL_ALIGN_FILL);
-        //GridData gridDataOptions = new GridData(GridData.HORIZONTAL_ALIGN_FILL);
-        //
-        //GridData gridDataButton = new GridData(GridData.FILL_BOTH);
-        //gridDataButton.heightHint        = 32;
-        //
-        //GridData gridData3Row = new GridData(GridData.FILL_BOTH);
-        ////gridData3Row.grabExcessHorizontalSpace = true;
-        ////gridData3Row.grabExcessVerticalSpace   = true;
-        ////gridData3Row.horizontalAlignment = GridData.FILL;
-        ////gridData3Row.verticalAlignment   = GridData.FILL;
-        //gridData3Row.horizontalSpan = 1;
-        //gridData3Row.verticalSpan   = 2;
-        //gridData3Row.widthHint      = 160;
-        //gridData3Row.heightHint     = 320;
-        //
-        //GridData gridDataCmdLine = new GridData(GridData.HORIZONTAL_ALIGN_FILL);
-        ////gridDataCmdLine.grabExcessHorizontalSpace = true;
-        ////gridDataCmdLine.grabExcessVerticalSpace   = true;
-        ////gridDataCmdLine.horizontalAlignment = GridData.FILL;
-        ////gridDataCmdLine.verticalAlignment   = GridData.FILL;
-        //gridDataCmdLine.horizontalSpan = 2;
-        //gridDataCmdLine.verticalSpan   = 1;
-        //gridDataCmdLine.heightHint        = 32;
-        ////gridDataCmdLine.widthHint         = 160 * 3;
-        //
-        //GridData gridDataProgressBar = new GridData(GridData.FILL_HORIZONTAL);
-        ////gridDataProgressBar.grabExcessHorizontalSpace = true;
-        ////gridDataProgressBar.grabExcessVerticalSpace   = true;
-        ////gridDataProgressBar.horizontalAlignment = GridData.FILL;
-        ////gridDataProgressBar.verticalAlignment   = GridData.FILL;
-        //gridDataProgressBar.horizontalSpan = 3;
-        //gridDataProgressBar.verticalSpan   = 1;
-        //
-        //GridData gridDataStatus = new GridData(GridData.FILL_BOTH);
-        ////gridDataStatus.grabExcessHorizontalSpace = true;
-        ////gridDataStatus.grabExcessVerticalSpace   = true;
-        ////gridDataStatus.horizontalAlignment = GridData.FILL;
-        ////gridDataStatus.verticalAlignment   = GridData.FILL;
-        //gridDataStatus.horizontalSpan = 3;
-        //gridDataStatus.verticalSpan   = 1;
-        //gridDataStatus.heightHint     = 160;
-
-        // Do not manually modify this function.
-        //~Entice Designer 0.8.5.02 code begins here.
-
         {
             SashForm sashFormLevel_1 = new SashForm(canvas, SWT.HORIZONTAL);
 
-            GridData gridData = new GridData(GridData.FILL_BOTH);
-            //gridData.grabExcessHorizontalSpace = true;
-            //gridData.grabExcessVerticalSpace   = true;
-            //gridData.horizontalAlignment = GridData.FILL;
-            //gridData.verticalAlignment   = GridData.FILL;
-            //gridData.horizontalSpan = 2;
-            //gridData.verticalSpan   = 1;
-            //gridData.heightHint        = 320;
-            //gridData.widthHint         = 160 * 3;
-            sashFormLevel_1.setLayoutData(gridData);
+            //GridData gridData = new GridData(GridData.FILL_BOTH);
+            ////gridData.grabExcessHorizontalSpace = true;
+            ////gridData.grabExcessVerticalSpace   = true;
+            ////gridData.horizontalAlignment = GridData.FILL;
+            ////gridData.verticalAlignment   = GridData.FILL;
+            ////gridData.horizontalSpan = 2;
+            ////gridData.verticalSpan   = 1;
+            ////gridData.heightHint        = 320;
+            ////gridData.widthHint         = 160 * 3;
+            //sashFormLevel_1.setLayoutData(gridData);
+
+            filteredList[Component.Worlds] = new FilteredList();
+            filteredList[Component.Worlds].createUI(sashFormLevel_1, "World", 320, 160);
+            filteredList[Component.Worlds].list.addSelectionListener(new WorldSelectedListener());
+
+            filteredList[Component.Levels] = new FilteredList();
+            filteredList[Component.Levels].createUI(sashFormLevel_1, "Level", 320, 160);
 
             {
-                Composite container = new Composite(sashFormLevel_1, SWT.NONE);
-                GridLayout layout = new GridLayout();
-                layout.marginWidth = 0;
-                layout.marginHeight = 0;
-                layout.horizontalSpacing = 0;
-                layout.verticalSpacing = 0;
-                //layout.fill = true;
-                //layout.wrap = false;
-                container.setLayout(layout);
+                SashForm sashFormLevel_1_1 = new SashForm(sashFormLevel_1, SWT.VERTICAL);
+                //Composite container = new Composite(sashFormLevel_1, SWT.NONE);
+                //GridLayout layout = new GridLayout();
+                //layout.marginWidth = 0;
+                //layout.marginHeight = 0;
+                //layout.horizontalSpacing = 0;
+                //layout.verticalSpacing = 0;
+                //container.setLayout(layout);
                 
-                //~SWT org.eclipse.swt.widgets.Label.Label=lblWorlds
-                lblWorlds = new org.eclipse.swt.widgets.Label.Label(container,SWT.LEFT);
-                lblWorlds.setText("Worlds:");
-                //lblWorlds.setBounds(12, 12, 160, 16);
-                
-                //~SWT org.eclipse.swt.widgets.Combo.Combo=cmbWorlds
-                cmbWorlds = new org.eclipse.swt.widgets.Combo.Combo(container,SWT.SIMPLE);
-                //cmbWorlds.setLayoutData(gridData3Row);
-                GridData gridDataList = new GridData(GridData.FILL_BOTH);
-                gridDataList.heightHint        = 320;
-                gridDataList.widthHint         = 160;
-                cmbWorlds.setLayoutData(gridDataList);
-                //cmbWorlds.setLayoutData(new GridData(GridData.FILL_BOTH));
-                cmbWorlds.addSelectionListener(new WorldSelectedListener(this));
-                cmbWorlds.addSelectionListener(new UpdateCMDLineListener(this));
-                //cmbWorlds.setBounds(col1Pos.x, col1Pos.y, col1SubSize.x, col1SubSize.y);
+                filteredList[Component.Platforms] = new FilteredList();
+                filteredList[Component.Platforms].createUI(sashFormLevel_1_1, "Platform", 160, 160);
+
+                filteredList[Component.Languages] = new FilteredList();
+                filteredList[Component.Languages].createUI(sashFormLevel_1_1, "Language", 80, 160);
             }
             {
                 Composite container = new Composite(sashFormLevel_1, SWT.NONE);
@@ -239,46 +333,15 @@ class UIDataPrepare : UIBase
                 layout.horizontalSpacing = 0;
                 layout.verticalSpacing = 0;
                 container.setLayout(layout);
-                
-                //~SWT org.eclipse.swt.widgets.Label.Label=lblLevels
-                lblLevels = new org.eclipse.swt.widgets.Label.Label(container,SWT.LEFT);
-                lblLevels.setText("Levels:");
-                //lblLevels.setBounds(176, 12, 160, 16);
-                
-                //~SWT org.eclipse.swt.widgets.Combo.Combo=cmbLevels
-                cmbLevels = new org.eclipse.swt.widgets.Combo.Combo(container,SWT.SIMPLE);
-                //cmbLevels.setLayoutData(gridData3Row);
-                cmbLevels.setLayoutData(new GridData(GridData.FILL_BOTH));
-                cmbLevels.addSelectionListener(new UpdateCMDLineListener(this));
-                //cmbLevels.setBounds(176, 28, 160, 251);
-            }
-            {
-                Composite container = new Composite(sashFormLevel_1, SWT.NONE);
-                GridLayout layout = new GridLayout();
-                layout.marginWidth = 0;
-                layout.marginHeight = 0;
-                layout.horizontalSpacing = 0;
-                layout.verticalSpacing = 0;
-                container.setLayout(layout);
-                
-                //~SWT org.eclipse.swt.widgets.Label.Label=lblPlatforms
-                lblPlatforms = new org.eclipse.swt.widgets.Label.Label(container,SWT.LEFT);
-                lblPlatforms.setText("Platforms:");
-                //lblPlatforms.setBounds(176, 12, 160, 16);
-                
-                //~SWT org.eclipse.swt.widgets.Combo.Combo=cmbPlatforms
-                cmbPlatforms = new org.eclipse.swt.widgets.Combo.Combo(container,SWT.SIMPLE);
-                //cmbPlatforms.setLayoutData(gridDataPlatforms);
-                cmbPlatforms.setLayoutData(new GridData(GridData.FILL_BOTH));
-                cmbPlatforms.addSelectionListener(new UpdateCMDLineListener(this));
-                //cmbPlatforms.setBounds(176, 28, 160, 251);
-                
+
                 //~SWT org.eclipse.swt.widgets.Group.Group=grpAdvanced
                 grpAdvanced = new org.eclipse.swt.widgets.Group.Group(container,SWT.NONE);
                 grpAdvanced.setText("Build Options (Advanced)");
                 //grpAdvanced.setLayoutData(gridDataOptions);
                 grpAdvanced.setLayoutData(new GridData(GridData.FILL_BOTH));
                 grpAdvanced.setLayout(new RowLayout(SWT.VERTICAL));
+                grpAdvanced.setBackground(display.getSystemColor(SWT.COLOR_WIDGET_BACKGROUND));
+                grpAdvanced.setBackgroundMode(SWT.INHERIT_FORCE);
                 //grpAdvanced.setBounds(352, 12, 160, 84);
                 {
                     string preprocessorUIOptions  = Config.GetVariableOrDefaultValue("PreprocessorUserOptions", "");
@@ -293,7 +356,7 @@ class UIDataPrepare : UIBase
                         chkBuildOptions[i].setText(opt);
                         bool def = indexOf(preprocessorDefaultCmd, opt, std.string.CaseSensitive.no) != -1;
                         chkBuildOptions[i].setSelection(def);
-                        chkBuildOptions[i].addSelectionListener(new UpdateCMDLineListener(this));
+                        chkBuildOptions[i].addSelectionListener(new UpdateCMDLineListener());
                         //chkShaderData.setBounds(8, 51, 144, 23);
                     }
                 }
@@ -316,7 +379,7 @@ class UIDataPrepare : UIBase
 
             
             //~SWT org.eclipse.swt.widgets.Text.Text=txtCmdLine
-            txtCmdLine = new org.eclipse.swt.widgets.Text.Text(sashFormLevel_2,SWT.BORDER|SWT.WRAP|SWT.MULTI);
+            txtCmdLine = new org.eclipse.swt.widgets.Text.Text(sashFormLevel_2,SWT.BORDER|SWT.WRAP|SWT.V_SCROLL);
             //txtCmdLine.setLayoutData(gridDataCmdLine);
             //txtCmdLine.setBounds(12, 292, 500, 23);
             
@@ -325,27 +388,11 @@ class UIDataPrepare : UIBase
             btnBuild.setText("Build");
             //btnBuild.setLayoutData(gridDataButton);
             //btnBuild.setBounds(352, 196, 160, 88);
-            btnBuild.addSelectionListener(new BuildListener(this) );
+            btnBuild.addSelectionListener(new BuildListener());
 
             //int[] weights = [2, 1];
             sashFormLevel_2.setWeights([4,1]);
         }
-
-        ////~SWT org.eclipse.swt.widgets.TabFolder.TabFolder=tabStatuses
-        //tabStatuses = new org.eclipse.swt.widgets.TabFolder.TabFolder(container,SWT.TOP);
-        //tabStatuses.setLayoutData(gridDataStatus);
-        //tabStatuses.setLayout(new FillLayout());
-        ////tabStatuses.setBounds(12, 312, 500, 96);
-        //{
-        //    //~SWT org.eclipse.swt.widgets.Text.Text=txtStatus
-        //    txtStatus = new org.eclipse.swt.widgets.Text.Text(tabStatuses,SWT.BORDER|SWT.WRAP|SWT.MULTI|SWT.READ_ONLY);
-        //    //txtStatus.setBounds(2, 2, 466, 92);
-        //}
-        ////~DWT org.eclipse.swt.widgets.ProgressBar.ProgressBar=progressBar
-        //progressBar = new org.eclipse.swt.widgets.ProgressBar.ProgressBar(container, SWT.NONE);
-        //progressBar.setLayoutData(gridDataProgressBar);
-        ////progressBar.setBounds(12, 410, 500, 23);
-        ////~Entice Designer 0.8.5.02 code ends here.
     }
 
     private void PopulateWorlds()
@@ -354,7 +401,7 @@ class UIDataPrepare : UIBase
         string levelsDir = Config.GetVariableOrDefaultValue("LevelsDir", "");
         string worldsExt = Config.GetVariableOrDefaultValue("WorldsExt", "");
 
-        cmbWorlds.removeAll();
+        filteredList[Component.Worlds].list.removeAll();
         if(!exists(worldsDir))
             return;
 
@@ -371,48 +418,97 @@ class UIDataPrepare : UIBase
             if(!exists(d.name ~ "/" ~ levelsDir))
                 continue;
 
-            cmbWorlds.add(baseName(d.name));
+            filteredList[Component.Worlds].list.add(baseName(d.name));
         }
+
+        filteredList[Component.Worlds].doneUpdating();
+        string userWorld  = Config.GetVariableOrDefaultValue("UserWorld", "");
+        filteredList[Component.Worlds].setText(userWorld, true);
     }
 
-    private void PopulateLevels(string worldName)
+    private void PopulateLevels(string[] worldNames)
     {
-        string worldsDir = absolutePath(Config.GetVariableOrDefaultValue("WorldsDir", "") ~ "/" ~ worldName);
-        string levelsDir = worldsDir ~ "/" ~ Config.GetVariableOrDefaultValue("LevelsDir", "");
-        string levelsExt = Config.GetVariableOrDefaultValue("LevelsExt", "");
-
-        cmbLevels.removeAll();
-        if(!exists(levelsDir))
-            return;
-
-        auto slnDirEntries = dirEntries(levelsDir, SpanMode.shallow);
-
-        foreach (DirEntry d; slnDirEntries)
+        foreach(worldName; worldNames)
         {
-            if(!d.isDir())
-                continue;
+            string worldsDir = absolutePath(Config.GetVariableOrDefaultValue("WorldsDir", "") ~ "/" ~ worldName);
+            string levelsDir = worldsDir ~ "/" ~ Config.GetVariableOrDefaultValue("LevelsDir", "");
+            string levelsExt = Config.GetVariableOrDefaultValue("LevelsExt", "");
 
-            if(!exists(d.name ~ "/" ~ baseName(d.name) ~ levelsExt))
-                continue;
+            filteredList[Component.Levels].list.removeAll();
+            if(!exists(levelsDir))
+                return;
 
-            cmbLevels.add(baseName(d.name));
+            auto slnDirEntries = dirEntries(levelsDir, SpanMode.shallow);
+
+            foreach (DirEntry d; slnDirEntries)
+            {
+                if(!d.isDir())
+                    continue;
+
+                if(!exists(d.name ~ "/" ~ baseName(d.name) ~ levelsExt))
+                    continue;
+
+                filteredList[Component.Levels].list.add(baseName(d.name));
+            }
         }
+
+        filteredList[Component.Levels].doneUpdating();
+        string userLevel  = Config.GetVariableOrDefaultValue("UserLevel", "");
+        filteredList[Component.Levels].setText(userLevel, true);
     }
 
     private void PopulatePlatforms()
     {
         string preprocessorPlatforms  = Config.GetVariableOrDefaultValue("PreprocessorPlatforms", "");
         auto platforms = split(preprocessorPlatforms, ",");
+        filteredList[Component.Platforms].list.setItems(platforms);
+
+        filteredList[Component.Platforms].doneUpdating();
         string userPlatform  = Config.GetVariableOrDefaultValue("UserPlatform", platforms[0]);
-        cmbPlatforms.setItems(platforms);
-        cmbPlatforms.setText(userPlatform);
+        filteredList[Component.Platforms].setText(userPlatform, true);
+    }
+
+    private void PopulateLanguages()
+    {
+        string preprocessorLanguages  = Config.GetVariableOrDefaultValue("PreprocessorLanguages", "");
+        auto Languages = split(preprocessorLanguages, ",");
+        filteredList[Component.Languages].list.setItems(Languages);
+
+        filteredList[Component.Languages].doneUpdating();
+        string userLanguage  = Config.GetVariableOrDefaultValue("UserLanguage", Languages[0]);
+        filteredList[Component.Languages].setText(userLanguage, true);
     }
 
     private void UpdateCMDLine()
     {
         if(txtCmdLine is null)  return;
 
+        string[] options;
+
         string preprocessor = absolutePath(Config.GetVariableOrDefaultValue("PreprocessorExe", ""));
+        options ~= preprocessor;
+
+        string worldOpt     = Config.GetVariableOrDefaultValue("PreprocessorWorldOption",    "-world=");
+        string levelOpt     = Config.GetVariableOrDefaultValue("PreprocessorLevelOption",    "-level=");
+        string platformOpt  = Config.GetVariableOrDefaultValue("PreprocessorPlatformOption", "-platform=");
+        string languageOpt  = Config.GetVariableOrDefaultValue("PreprocessorLanguageOption", "-language=");
+        string worldSeperator     = Config.GetVariableOrDefaultValue("PreprocessorWorldMultiSeperator",    "");
+        string levelSeperator     = Config.GetVariableOrDefaultValue("PreprocessorLevelMultiSeperator",    "");
+        string platformSeperator  = Config.GetVariableOrDefaultValue("PreprocessorPlatformMultiSeperator", "");
+        string languageSeperator  = Config.GetVariableOrDefaultValue("PreprocessorLanguageMultiSeperator", "");
+        string worlds = join(filteredList[Component.Worlds].list.getSelection(), worldSeperator);
+        string levels = join(filteredList[Component.Levels].list.getSelection(), levelSeperator);
+        string platforms = join(filteredList[Component.Platforms].list.getSelection(), platformSeperator);
+        string languages = join(filteredList[Component.Languages].list.getSelection(), languageSeperator);
+        if(!filteredList[Component.Worlds].list.getSelection().empty)
+            options ~= worldOpt ~ worlds;
+        if(!filteredList[Component.Levels].list.getSelection().empty)
+            options ~= levelOpt ~ levels;
+        if(!filteredList[Component.Platforms].list.getSelection().empty)
+            options ~= platformOpt ~ platforms;
+        if(!filteredList[Component.Languages].list.getSelection().empty)
+            options ~= languageOpt ~ languages;
+
         string preprocessorDefaultCmd = Config.GetVariableOrDefaultValue("PreprocessorDefaultOptions", "");
         auto defaultOptions = split(preprocessorDefaultCmd, ",");
         string[] disabledOptions;
@@ -429,7 +525,6 @@ class UIDataPrepare : UIBase
                 disabledOptions ~= opt;
             }
         }
-        string[] options;
         foreach(dOpt; defaultOptions)
         {
             auto opt = toLower(dOpt);
@@ -440,64 +535,46 @@ class UIDataPrepare : UIBase
         }
         options ~= userOptions;
 
-        string platformOpt = Config.GetVariableOrDefaultValue("PreprocessorPlatformOption", "-platform=");
-        string worldOpt = Config.GetVariableOrDefaultValue("PreprocessorWorldOption", "-world=");
-        string levelOpt = Config.GetVariableOrDefaultValue("PreprocessorLevelOption", "-level=");
-        if(!cmbPlatforms.getText().empty)
-            options ~= platformOpt ~ cmbPlatforms.getText();
-        if(!cmbWorlds.getText().empty)
-            options ~= worldOpt ~ cmbWorlds.getText();
-        if(!cmbLevels.getText().empty)
-            options ~= levelOpt ~ cmbLevels.getText();
+        auto command = join(options, " ");
 
-        auto optionsCmd = join(options, " ");
+        txtCmdLine.setText(command);
 
-        txtCmdLine.setText(preprocessor ~ " " ~ optionsCmd);
+        Config.SetVariable("UserWorld", worlds);
+        Config.SetVariable("UserLevel", levels);
+        Config.SetVariable("UserPlatform", platforms);
+        Config.SetVariable("UserLanguage", languages);
 
-        Config.SetVariable("UserPlatform", cmbPlatforms.getText());
-        Config.SetVariable("UserWorld", cmbWorlds.getText());
-        Config.SetVariable("UserLevel", cmbLevels.getText());
+        //filteredList[Component.Worlds].setText(worlds);
+        //filteredList[Component.Levels].setText(levels);
+        //filteredList[Component.Platforms].setText(platforms);
+        //filteredList[Component.Languages].setText(languages);
     }
 
     private class WorldSelectedListener : SelectionAdapter
     {
-        UIDataPrepare ui;
-        this(UIDataPrepare ui)
-        {
-            this.ui = ui;
-        }
         override public void widgetSelected(SelectionEvent e)
         {
             auto selectedItem = (e.item !is null) ? e.item : e.getSource();
-            Combo cmb = cast(Combo)selectedItem;
-            PopulateLevels(cmb.getText());
-            //Stdout("selected").newline;
+            List cmb = cast(List)selectedItem;
+            PopulateLevels(cmb.getSelection());
+
+            //filteredList[Component.Levels].filter.postEvent(SWT.Modify);
         }
     }
 
     private class UpdateCMDLineListener : SelectionAdapter
     {
-        UIDataPrepare ui;
-        this(UIDataPrepare ui)
-        {
-            this.ui = ui;
-        }
         override public void widgetSelected(SelectionEvent e)
         {
-            ui.UpdateCMDLine();
+            UpdateCMDLine();
         }
     }
 
     private class BuildListener : SelectionAdapter
     {
-        UIDataPrepare ui;
-        this(UIDataPrepare ui)
-        {
-            this.ui = ui;
-        }
         override public void widgetSelected(SelectionEvent e)
         {
-            //Stdout("selected").newline;
+            UIStatus.get().addStatus(typeName, txtCmdLine.getText(), 0);
         }
     }
 }

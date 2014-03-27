@@ -14,14 +14,19 @@ import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.layout.FillLayout;
+import org.eclipse.swt.custom.SashForm;
 import BuildSlave.Config;
 import BuildSlave.UI.Base;
+import BuildSlave.UI.Status;
 import BuildSlave.UI.Build;
 import BuildSlave.UI.DataPrepare;
 
 
 class UIShell
 {
+    //TabFolder tabFolderUtils;
+    //UIStatus tabFolderStatus;
+
     this()
     {
     }
@@ -29,45 +34,62 @@ class UIShell
     static int Show()
     {
         auto display = new Display;
-        auto shell = new Shell(display);
+        auto shell = new Shell(display,SWT.SHELL_TRIM|SWT.PRIMARY_MODAL);
         shell.setLayout(new FillLayout());
         shell.setText("BuildSlave");
         //shell.setBounds(0, 0, 800, 400);
-        auto tabFolder = new TabFolder(shell, SWT.TOP);
-        //tabFolder.setBounds(4, 4, 784, 364);
+        //shell.setBackground(display.getSystemColor(SWT.COLOR_WIDGET_BACKGROUND));
+        //shell.setBackgroundMode(SWT.INHERIT_DEFAULT);
 
-        string[] tabs = [ "Build", "Data Prepare" ];
-        auto tabTypes = [typeid(UIBuild), typeid(UIDataPrepare)];
-        auto showTabs = split(Config.GetVariableOrDefaultValue("ShowTabs", ""), ",");
-        if(showTabs.length == 0)
-        {
-            showTabs = tabs;
-        }
+        //{
+            SashForm sashFormLevel_1 = new SashForm(shell, SWT.VERTICAL);
 
-        foreach (tab; showTabs)
-        {
-            UIBase ui = CreateUIType(tab, tabFolder);
-            if(ui !is null)
+            auto tabFolderUtils = new TabFolder(sashFormLevel_1, SWT.TOP);
+            //tabFolder.setBounds(4, 4, 784, 364);
+
+            auto uiStatus = new UIStatus(sashFormLevel_1);
+            UIStatus.get().preInitialize();
+            UIStatus.get().initialize();
+            UIBase.AllLog   = UIStatus.get().addStatus("Log");
+            UIBase.ErrorLog = UIStatus.get().addStatus("Error");
+
+            sashFormLevel_1.setWeights([3,1]);
+
+            string[] tabs = [ "Build", "Data Prepare" ];
+            auto tabTypes = [typeid(UIBuild), typeid(UIDataPrepare)];
+            auto showTabs = split(Config.GetVariableOrDefaultValue("ShowTabs", ""), ",");
+            if(showTabs.length == 0)
             {
-                TabItem tabItem = new TabItem(tabFolder, SWT.NONE);
-                tabItem.setText(tab);
-                //Composite container = new Composite(tabFolder, SWT.NONE);
-                tabItem.setControl(ui);
-                ui.preInitialize();
-                ui.initialize();
-                //ui.initialize(container);
+                showTabs = tabs;
             }
-        }
 
-        tabFolder.layout();
+            foreach (tab; showTabs)
+            {
+                UIBase ui = CreateUIType(tab, tabFolderUtils);
+                if(ui !is null)
+                {
+                    TabItem tabItem = new TabItem(tabFolderUtils, SWT.NONE);
+                    tabItem.setText(tab);
+                    //Composite container = new Composite(tabFolderUtils, SWT.NONE);
+                    tabItem.setControl(ui);
+                    ui.preInitialize();
+                    ui.initialize();
+                    //ui.initialize(container);
+                }
+            }
+
+            tabFolderUtils.layout();
+            tabFolderUtils.pack();
+        //}
+
         shell.layout();
-
-        tabFolder.pack();
         shell.pack();
 
         shell.open();
 
-        UpdateActiveTab(tabFolder);
+        UIStatus.get().postInitialize();
+
+        UpdateActiveTab(tabFolderUtils);
 
         while (!shell.isDisposed)
             if (!display.readAndDispatch())

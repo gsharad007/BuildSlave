@@ -2,9 +2,13 @@ module BuildSlave.UI.Base;
 
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.TabFolder;
 
 class UIBase : Composite
 {
+    static int AllLog = 0;
+    static int ErrorLog = 0;
+
     this(Composite parent)
     {
         super(parent, SWT.NONE);
